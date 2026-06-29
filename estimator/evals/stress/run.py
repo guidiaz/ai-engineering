@@ -82,13 +82,21 @@ CSV_FIELDS: list[str] = [
 ]
 
 
+# Keys (the text before the first ':') whose value is single-valued, so a later
+# turn changing the value supersedes the earlier one — a real contradiction.
+# Everything else accumulates: "feature: ..." piles up turn after turn, and tech
+# facts ("stack includes ...") have no colon and accumulate too. Without this
+# allowlist, every "feature:" fact would falsely supersede the previous one.
+SINGLE_VALUED_KEYS = frozenset({"project name", "budget locked"})
+
+
 def _partition_facts(facts: list[str]) -> tuple[list[str], list[str]]:
     """Split chronological facts into ``(expected_now, superseded)``.
 
-    Facts sharing a ``label:`` key whose value changed in a later turn are a
-    contradiction: the earlier value is superseded (should be *gone*), the
-    latest is expected. Same-value restatements and colon-less facts (which
-    accumulate, e.g. the tech stack in the pivot scenario) are never superseded.
+    A fact whose key is in ``SINGLE_VALUED_KEYS`` and whose value changed in a
+    later turn is a contradiction: the earlier value is superseded (should be
+    *gone*), the latest is expected. Same-value restatements, colon-less facts,
+    and list-valued keys (e.g. ``feature``) accumulate and are never superseded.
     """
     latest_by_key: dict[str, tuple[str, str]] = {}
     superseded: list[str] = []
@@ -97,10 +105,11 @@ def _partition_facts(facts: list[str]) -> tuple[list[str], list[str]]:
             continue
         key, _, value = fact.partition(":")
         key, value = key.strip().lower(), value.strip().lower()
-        prev = latest_by_key.get(key)
-        if prev is not None and prev[1] != value:
-            superseded.append(prev[0])
-        latest_by_key[key] = (fact, value)
+        if key in SINGLE_VALUED_KEYS:
+            prev = latest_by_key.get(key)
+            if prev is not None and prev[1] != value:
+                superseded.append(prev[0])
+            latest_by_key[key] = (fact, value)
 
     superseded_set = set(superseded)
     expected = list(dict.fromkeys(f for f in facts if f not in superseded_set))
