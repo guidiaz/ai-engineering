@@ -1,0 +1,3 @@
+# Stress-run CSV reports are generated artifacts, not source.
+*
+!.gitignore

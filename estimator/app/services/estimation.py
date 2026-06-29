@@ -49,7 +49,7 @@ from app.services.critic import Critic
 from app.services.llm_wrapper import LLMWrapper
 from app.sessions.compression import apply_compression
 from app.sessions.metadata_extractor import update_metadata
-from app.sessions.models import Session
+from app.sessions.models import Session, TurnObservation
 from app.sessions.tier_resolver import Tier, resolve_tier
 
 log = structlog.get_logger()
@@ -107,9 +107,7 @@ class EstimationService:
         check_input(request.description, openai_client=self.openai_client)
 
         # 2. Exact-match cache lookup.
-        cache_key = _exact_cache_key(
-            request, self.prompt_version, self.llm_wrapper.primary_model
-        )
+        cache_key = _exact_cache_key(request, self.prompt_version, self.llm_wrapper.primary_model)
         cached = self.exact_cache.get(cache_key)
         if cached:
             log.info("estimation_cache_hit", kind="exact", key_prefix=cache_key[:24])
@@ -130,9 +128,7 @@ class EstimationService:
                 )
 
         # 4. Render the versioned prompt.
-        system_prompt, user_message = render_estimation_prompt(
-            request, version=self.prompt_version
-        )
+        system_prompt, user_message = render_estimation_prompt(request, version=self.prompt_version)
 
         # 5. LLM call with Instructor + Pydantic validators (re-prompts on failure).
         result, meta = self.llm_wrapper.complete_structured(
@@ -164,9 +160,7 @@ class EstimationService:
             self.semantic_cache.store(request, result, self.prompt_version)
 
         # 8. Return.
-        return EstimationResponse(
-            result=result, prompt_version=self.prompt_version, cached=False
-        )
+        return EstimationResponse(result=result, prompt_version=self.prompt_version, cached=False)
 
     def estimate_conversational(
         self,
@@ -280,10 +274,8 @@ class EstimationService:
         #    conversational path never caches (every turn depends on history),
         #    so `cache_hit_kind` is always "none" here.
         session.turn_count += 1
-        log.info(
-            "turn_observed",
+        observation = TurnObservation(
             turn_index=session.turn_count,
-            session_id=session.session_id,
             enriched_transcript_chars=len(transcript),
             attachments_total_chars=attachments_total_chars,
             messages_in_window=len(session.history.messages),
@@ -296,6 +288,10 @@ class EstimationService:
             cache_hit_kind="none",
             last_resolved_tier=session.last_resolved_tier,
         )
+        # Stash it so GET /sessions/{id} can return the latest turn (eval clients
+        # read cost/latency from there instead of scraping stdout) and log it.
+        session.last_turn = observation
+        log.info("turn_observed", session_id=session.session_id, **observation.model_dump())
 
         return EstimationResponse(
             result=result,
@@ -393,9 +389,7 @@ class EstimationService:
         final_result, trace = boss.run(actor=_actor, critic=_critic)
 
         # 6. Persist the final result into the session (single turn append).
-        session.history.append(
-            user=transcript, assistant=final_result.model_dump_json()
-        )
+        session.history.append(user=transcript, assistant=final_result.model_dump_json())
         apply_compression(
             session.history,
             llm_wrapper=self.llm_wrapper,

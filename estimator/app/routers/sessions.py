@@ -41,7 +41,7 @@ from app.schemas.estimation import (
     ProjectType,
 )
 from app.services.estimation import EstimationService
-from app.sessions.models import ProjectMetadata
+from app.sessions.models import ProjectMetadata, TurnObservation
 from app.sessions.store import SessionNotFoundError, SessionStore
 from app.sessions.tier_resolver import Tier
 
@@ -63,6 +63,11 @@ class SessionInfoResponse(BaseModel):
     summary_chars: int = 0
     last_resolved_tier: str | None = None
     last_tier_rule: str | None = None
+    # Enriched fields for the stress/eval runner: the latest turn's observation
+    # (cost/latency, so clients need not scrape logs) and the memory snapshot
+    # (bucketed text the MemoryDriftMetric searches for surviving facts).
+    last_turn: TurnObservation | None = None
+    memory_snapshot: dict[str, str] = Field(default_factory=dict)
 
 
 @router.post("", response_model=CreateSessionResponse, status_code=201)
@@ -92,6 +97,8 @@ def get_session(
         summary_chars=len(session.history.summary or ""),
         last_resolved_tier=session.last_resolved_tier,
         last_tier_rule=session.last_tier_rule,
+        last_turn=session.last_turn,
+        memory_snapshot=session.memory_snapshot(),
     )
 
 
@@ -162,9 +169,7 @@ def _map_pipeline_errors(exc: Exception) -> HTTPException:
             reason=exc.reason,
             message=exc.message,
         )
-        return HTTPException(
-            status_code=400, detail={"reason": exc.reason, "message": exc.message}
-        )
+        return HTTPException(status_code=400, detail={"reason": exc.reason, "message": exc.message})
     log.error(
         "session_estimate_endpoint_error",
         error=str(exc)[:400],

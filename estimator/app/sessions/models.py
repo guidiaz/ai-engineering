@@ -153,6 +153,28 @@ class ProjectMetadata(BaseModel):
         )
 
 
+class TurnObservation(BaseModel):
+    """The per-turn observability record emitted as the ``turn_observed`` log.
+
+    It is also stashed on the session (``Session.last_turn``) so a debug/eval
+    client can read the latest turn's cost/latency from ``GET /sessions/{id}``
+    instead of scraping the service's stdout.
+    """
+
+    turn_index: int
+    enriched_transcript_chars: int = 0
+    attachments_total_chars: int = 0
+    messages_in_window: int = 0
+    anchors_count: int = 0
+    summary_chars: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cost_usd: float = 0.0
+    latency_ms: int = 0
+    cache_hit_kind: str = "none"
+    last_resolved_tier: str | None = None
+
+
 class Session(BaseModel):
     """A conversational estimation session.
 
@@ -175,3 +197,31 @@ class Session(BaseModel):
     # ``len(history.messages)`` because compression evicts older turns, so it
     # is tracked explicitly and stamped onto the per-turn ``turn_observed`` log.
     turn_count: int = 0
+    # The most recent turn's observation, exposed via GET for eval clients.
+    last_turn: TurnObservation | None = None
+
+    def memory_snapshot(self) -> dict[str, str]:
+        """Text buckets of the session's memory, for fact-survival checks.
+
+        The four buckets mirror where a fact can live as a conversation grows:
+        ``metadata`` persists outside the sliding window, ``anchors`` survive
+        compression verbatim, ``summary`` is the folded-away older turns, and
+        ``window`` is the live recent turns. Reporting *which* bucket a fact
+        was found in is what distinguishes anchor-survival from summary-survival.
+        """
+        m = self.metadata
+        metadata_parts: list[str] = []
+        if m.project_name:
+            metadata_parts.append(f"project name {m.project_name}")
+        if m.assumed_team_size:
+            metadata_parts.append(f"team size {m.assumed_team_size}")
+        if m.mentioned_technologies:
+            metadata_parts.append(" ".join(m.mentioned_technologies))
+        if m.agreed_scope:
+            metadata_parts.append(m.agreed_scope)
+        return {
+            "metadata": " ; ".join(metadata_parts),
+            "anchors": "\n".join(a.content for a in self.history.anchors),
+            "summary": self.history.summary or "",
+            "window": "\n".join(msg.content for msg in self.history.messages),
+        }
