@@ -33,6 +33,7 @@ dev = [
     "ruff>=0.5",
     "fakeredis>=2.20",
     "deepeval>=1.0",
+    "fpdf2>=2.7",
 ]
 
 [tool.ruff]
