@@ -234,16 +234,29 @@ class LLMWrapper:
             raise
 
         latency_ms = int((time.perf_counter() - t0) * 1000)
+        # Instructor attaches the raw litellm completion (with token usage) to
+        # the parsed model as ``_raw_response``. Read it defensively so this
+        # observability path never breaks the call if usage is missing.
+        usage = getattr(getattr(result, "_raw_response", None), "usage", None)
+        tokens_in = getattr(usage, "prompt_tokens", 0) or 0
+        tokens_out = getattr(usage, "completion_tokens", 0) or 0
+        model_name = _normalise_model_name(target_model)
         meta = {
-            "model": _normalise_model_name(target_model),
+            "model": model_name,
             "provider": _provider_from_model(target_model),
             "latency_ms": latency_ms,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "cost_usd": _estimate_cost(model_name, tokens_in, tokens_out),
         }
         log.info(
             "llm_structured_chat_completed",
             model=meta["model"],
             provider=meta["provider"],
             latency_ms=latency_ms,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost_usd=meta["cost_usd"],
         )
         return result, meta
 

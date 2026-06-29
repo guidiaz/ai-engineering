@@ -171,3 +171,7 @@ class Session(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_resolved_tier: str | None = None
     last_tier_rule: str | None = None
+    # 1-based count of observed turns in this session. Can't be derived from
+    # ``len(history.messages)`` because compression evicts older turns, so it
+    # is tracked explicitly and stamped onto the per-turn ``turn_observed`` log.
+    turn_count: int = 0

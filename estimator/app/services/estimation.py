@@ -177,6 +177,7 @@ class EstimationService:
         detail_level: DetailLevel,
         output_format: OutputFormat,
         tier: Tier | None = None,
+        attachments_total_chars: int = 0,
     ) -> EstimationResponse:
         """Multi-turn estimation pipeline (Session 5).
 
@@ -266,6 +267,34 @@ class EstimationService:
             result=result,
             llm_wrapper=self.llm_wrapper,
             model=self.metadata_extractor_model,
+        )
+
+        # 8. Single consolidated observation event for the turn. One CSV row in,
+        #    one event out — everything a downstream `turn_observed` exporter
+        #    needs is gathered here instead of being reconstructed from the
+        #    cache_hit / llm_call / history_compressed / summarizer events.
+        #    Scope is per-call: `tokens_in/out` and `cost_usd` are the
+        #    *estimation* call's only; the summarizer and metadata extractor
+        #    also spend tokens this turn but are not summed in (the summarizer's
+        #    contribution surfaces instead as `summary_chars`). The
+        #    conversational path never caches (every turn depends on history),
+        #    so `cache_hit_kind` is always "none" here.
+        session.turn_count += 1
+        log.info(
+            "turn_observed",
+            turn_index=session.turn_count,
+            session_id=session.session_id,
+            enriched_transcript_chars=len(transcript),
+            attachments_total_chars=attachments_total_chars,
+            messages_in_window=len(session.history.messages),
+            anchors_count=len(session.history.anchors),
+            summary_chars=len(session.history.summary or ""),
+            tokens_in=meta.get("tokens_in", 0),
+            tokens_out=meta.get("tokens_out", 0),
+            cost_usd=meta.get("cost_usd", 0.0),
+            latency_ms=meta.get("latency_ms", 0),
+            cache_hit_kind="none",
+            last_resolved_tier=session.last_resolved_tier,
         )
 
         return EstimationResponse(
