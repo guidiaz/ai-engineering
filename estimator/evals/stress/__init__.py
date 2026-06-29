@@ -7,3 +7,15 @@ metadata extractor) holds onto — or drifts away from — facts stated early.
 ``scenarios`` defines the conversation profiles; the runner and the
 ``MemoryDriftMetric`` that scores fact survival are layered on top.
 """
+
+from evals.stress.metrics import (
+    CostBudgetMetric,
+    LatencyBudgetMetric,
+    MemoryDriftMetric,
+)
+
+__all__ = [
+    "LatencyBudgetMetric",
+    "CostBudgetMetric",
+    "MemoryDriftMetric",
+]
