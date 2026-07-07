@@ -10,6 +10,8 @@ from openai import OpenAI
 
 from app.cache.semantic import EstimationSemanticCache
 from app.config import get_settings
+from app.embedding_pipeline.chunker import JSONStructuralChunker
+from app.embedding_pipeline.embedder import OpenAIEmbedder
 from app.services.cache import EstimationCache
 from app.services.estimation import EstimationService
 from app.services.llm_wrapper import LLMWrapper
@@ -46,6 +48,20 @@ def get_openai_client() -> OpenAI | None:
     if not settings.OPENAI_API_KEY:
         return None
     return OpenAI(api_key=settings.OPENAI_API_KEY)
+
+
+@lru_cache
+def get_chunker() -> JSONStructuralChunker:
+    return JSONStructuralChunker()
+
+
+@lru_cache
+def get_embedder() -> OpenAIEmbedder:
+    settings = get_settings()
+    client = get_openai_client()
+    if client is None:
+        raise RuntimeError("OPENAI_API_KEY is not configured")
+    return OpenAIEmbedder(client, model=settings.EMBEDDING_MODEL)
 
 
 @lru_cache

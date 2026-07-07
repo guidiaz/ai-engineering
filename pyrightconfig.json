@@ -1,0 +1,10 @@
+{
+  "executionEnvironments": [
+    {
+      "root": "estimator",
+      "venvPath": "estimator",
+      "venv": ".venv",
+      "pythonVersion": "3.11"
+    }
+  ]
+}

@@ -27,6 +27,10 @@ services:
     volumes:
       - ./app:/app/app
       - ./tests:/app/tests
+      # Scripts auxiliares (p.ej. scripts/compare.py). No se copian en la
+      # imagen de producción; se montan para poder ejecutarlos en desarrollo
+      # con `docker compose exec estimator python scripts/compare.py ...`.
+      - ./scripts:/app/scripts
 
     # Override the default CMD to enable auto-reload on file changes.
     # Remove --reload for production deployments.

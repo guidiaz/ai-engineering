@@ -206,4 +206,39 @@ El cliente Rails (`estimator-web/`) se adaptó al flujo conversacional con un nu
 
 ---
 
+## Scripts auxiliares
+
+### `scripts/compare.py` — similitud coseno entre dos textos
+
+Embeda dos textos y devuelve la similitud coseno entre sus vectores. Reutiliza la clase `OpenAIEmbedder` del pipeline de embeddings (la misma que usa `POST /embeddings/ingest`) y la configuración de la app, así que el modelo (`EMBEDDING_MODEL`) y la API key salen del mismo sitio que el resto del servicio. La similitud coseno se calcula a mano (producto escalar dividido por el producto de las normas) con la biblioteca estándar, sin numpy ni scikit-learn.
+
+**Fuera del contenedor** (con el `.env` cargado; uv lo lee desde el directorio `estimator/`):
+
+```bash
+cd estimator
+uv run python scripts/compare.py \
+  --text-a "OAuth 2.0 authentication backend for fintech" \
+  --text-b "JWT-based authorization service for banking app"
+```
+
+**Dentro del contenedor** (el servicio toma las claves de `.env` vía `env_file`):
+
+```bash
+docker compose exec estimator python scripts/compare.py \
+  --text-a "OAuth 2.0 authentication backend for fintech" \
+  --text-b "JWT-based authorization service for banking app"
+```
+
+Salida (el formato exacto es libre, esto es un ejemplo):
+
+```
+Text A: OAuth 2.0 authentication backend for fintech
+Text B: JWT-based authorization service for banking app
+Cosine similarity: 0.8421
+```
+
+> **Nota sobre el bind mount:** el directorio `scripts/` **no** se copia en la imagen de producción (el `Dockerfile` solo lleva `app/`). El `docker-compose.yml` lo monta como volumen (`./scripts:/app/scripts`) para poder ejecutarlo en desarrollo. Si añadiste este volumen sobre un contenedor ya en marcha, recréalo con `docker compose up -d` (montar un volumen nuevo no basta con `--reload`).
+
+---
+
 > Este proyecto forma parte del **Master en AI Engineering** y es la base sobre la que se construye en directo el resto de la Sesión 04 (output estructurado, guardrails, cache semántico) y de la Sesión 05 (compresión avanzada de memoria con anclas, tier dinámico, patrón Actor-Critic-Boss).
