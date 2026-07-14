@@ -76,22 +76,52 @@ class EmbeddedChunk(Chunk):
 
 
 class IngestRequest(BaseModel):
-    """Payload for ``POST /embeddings/ingest``."""
+    """Payload for ``POST /embeddings/ingest``.
 
-    budgets: list[Budget] = Field(min_length=1, description="Budgets to chunk and embed.")
+    One request ingests one document. ``content`` is the full budget JSON as fed
+    to the chunker; ``source_path`` is its natural key (a second ingest with the
+    same path is a 409).
+    """
 
-
-class IngestStats(BaseModel):
-    """Aggregate counters returned with an ingest response."""
-
-    total_budgets: int = Field(ge=0)
-    total_chunks: int = Field(ge=0)
-    total_tokens: int = Field(ge=0)
-    estimated_cost_usd: float = Field(ge=0.0)
+    source_path: str = Field(description="Natural key of the document, e.g. its file path.")
+    document_type: str = Field(description="Kind of document, e.g. 'historical_budget'.")
+    content: Budget = Field(description="The full budget JSON to chunk, embed and persist.")
 
 
 class IngestResponse(BaseModel):
-    """Response for ``POST /embeddings/ingest``."""
+    """Response for ``POST /embeddings/ingest`` — identifiers and metrics only.
 
-    chunks: list[EmbeddedChunk]
-    stats: IngestStats
+    The chunks and their vectors are persisted, not returned.
+    """
+
+    document_id: int = Field(description="Generated id of the stored document.")
+    chunks_created: int = Field(ge=0, description="Number of chunk rows persisted.")
+    embedding_dimension: int = Field(ge=0, description="Dimensionality of each embedding.")
+    ingestion_time_ms: int = Field(ge=0, description="Wall-clock time of the whole ingest.")
+
+
+class SearchRequest(BaseModel):
+    """Payload for ``POST /search``."""
+
+    query: str = Field(min_length=1, description="Natural-language query to embed and match.")
+    k: int = Field(default=5, ge=1, le=50, description="Number of nearest chunks to return.")
+
+
+class SearchResultItem(BaseModel):
+    """One retrieved chunk with its cosine distance to the query."""
+
+    chunk_id: int
+    document_id: int
+    chunk_type: str
+    content: str
+    distance: float = Field(description="Cosine distance to the query (lower = closer).")
+    metadata: dict = Field(default_factory=dict)
+
+
+class SearchResponse(BaseModel):
+    """Response for ``POST /search`` — the query echoed back plus ranked hits."""
+
+    query: str
+    k: int
+    search_time_ms: int = Field(ge=0)
+    results: list[SearchResultItem]

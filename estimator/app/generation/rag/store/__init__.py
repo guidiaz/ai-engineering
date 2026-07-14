@@ -1,6 +1,15 @@
-"""Vector store — RESERVED FOR SESSION 8.
+"""Vector store — persistence of embedded chunks in PostgreSQL + pgvector.
 
-Persistence of embedded chunks in PostgreSQL + pgvector (HNSW index). Today
-the embedding pipeline returns vectors over HTTP without persisting them; this
-package is the home for pgvector persistence when Session 8 lands.
+``DocumentIngestor`` writes one budget document and its embedded chunks in a
+single transaction (``POST /embeddings/ingest``). The HNSW index and the
+semantic retriever that reads from here land alongside this package in
+Session 8.
 """
+
+from app.generation.rag.store.ingestor import (
+    DocumentAlreadyExists,
+    DocumentIngestor,
+    IngestOutcome,
+)
+
+__all__ = ["DocumentAlreadyExists", "DocumentIngestor", "IngestOutcome"]

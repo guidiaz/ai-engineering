@@ -6,63 +6,92 @@ failures to status codes. No business logic lives here.
 
 from __future__ import annotations
 
+from time import perf_counter
+
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import ALL_STRATEGIES, build_chunkers, get_chunker, get_embedder
+from app.foundation.persistence import get_async_session
 from app.generation.rag.chunking.structural import JSONStructuralChunker
 from app.generation.rag.analysis.comparison import (
     ChunkingComparator,
     CompareRequest,
     CompareResponse,
 )
-from app.generation.rag.embedding.embedder import OpenAIEmbedder, estimated_cost_usd
-from app.generation.rag.schemas import IngestRequest, IngestResponse, IngestStats
+from app.generation.rag.embedding.embedder import OpenAIEmbedder
+from app.generation.rag.schemas import IngestRequest, IngestResponse
+from app.generation.rag.store import DocumentAlreadyExists, DocumentIngestor
 
 log = structlog.get_logger()
 
 router = APIRouter(prefix="/embeddings", tags=["embeddings"])
 
 
-@router.post("/ingest", response_model=IngestResponse)
-def ingest(
+@router.post(
+    "/ingest",
+    response_model=IngestResponse,
+    responses={409: {"description": "A document with this source_path is already ingested."}},
+)
+async def ingest(
     request: IngestRequest,
+    session: AsyncSession = Depends(get_async_session),
     chunker: JSONStructuralChunker = Depends(get_chunker),
     embedder: OpenAIEmbedder | None = Depends(get_embedder),
-) -> IngestResponse:
-    """Chunk the budgets, embed every chunk, and return vectors + stats."""
+):
+    """Chunk, embed and persist one budget in a single transaction.
+
+    Returns identifiers and metrics only — the chunks and their vectors are
+    stored, not echoed back. A repeated ``source_path`` yields a 409.
+    """
     if embedder is None:
         # No OPENAI_API_KEY configured. Generic message to the client, detail logged.
         log.error("embeddings_ingest_failed", reason="embedder_unavailable")
         raise HTTPException(status_code=500, detail="Embedding service is not available.")
 
-    chunks = chunker.chunk(request.budgets)
     log.info(
         "embeddings_ingest_received",
-        total_budgets=len(request.budgets),
-        total_chunks=len(chunks),
+        source_path=request.source_path,
+        document_type=request.document_type,
     )
-
+    ingestor = DocumentIngestor(chunker, embedder)
+    started = perf_counter()
     try:
-        embedded = embedder.embed_many(chunks)
-    except Exception as exc:  # noqa: BLE001 — any embedding-API failure becomes a 500.
+        outcome = await ingestor.ingest(session, request)
+    except DocumentAlreadyExists as exc:
+        log.info(
+            "embeddings_ingest_conflict",
+            source_path=request.source_path,
+            document_id=exc.document_id,
+        )
+        return JSONResponse(
+            status_code=409,
+            content={"detail": "Document already ingested", "document_id": exc.document_id},
+        )
+    except Exception as exc:  # noqa: BLE001 — embedding/persistence failure becomes a 500.
         log.error(
             "embeddings_ingest_failed",
-            reason="embedding_api_error",
+            reason="ingest_error",
             error_type=type(exc).__name__,
             error=str(exc)[:300],
         )
-        raise HTTPException(status_code=500, detail="Failed to generate embeddings.") from exc
+        raise HTTPException(status_code=500, detail="Failed to ingest document.") from exc
 
-    total_tokens = sum(chunk.token_count for chunk in embedded)
-    stats = IngestStats(
-        total_budgets=len(request.budgets),
-        total_chunks=len(embedded),
-        total_tokens=total_tokens,
-        estimated_cost_usd=estimated_cost_usd(total_tokens),
+    ingestion_time_ms = round((perf_counter() - started) * 1000)
+    log.info(
+        "embeddings_ingest_done",
+        document_id=outcome.document_id,
+        chunks_created=outcome.chunks_created,
+        ingestion_time_ms=ingestion_time_ms,
     )
-    log.info("embeddings_ingest_done", **stats.model_dump())
-    return IngestResponse(chunks=embedded, stats=stats)
+    return IngestResponse(
+        document_id=outcome.document_id,
+        chunks_created=outcome.chunks_created,
+        embedding_dimension=outcome.embedding_dimension,
+        ingestion_time_ms=ingestion_time_ms,
+    )
 
 
 @router.post("/compare", response_model=CompareResponse)
