@@ -234,7 +234,7 @@ El cliente Rails (`estimator-web/`) se adaptó al flujo conversacional con un nu
 
 ## Sesión 7 — Pipeline de embeddings
 
-Primer paso hacia la búsqueda semántica: convertir presupuestos históricos (JSON) en vectores. El módulo nuevo vive en `app/generation/rag/` y expone un único endpoint. **No se persiste nada todavía** — los vectores se generan en memoria y se devuelven por HTTP; la persistencia en pgvector entra en la Sesión 08.
+Primer paso hacia la búsqueda semántica: convertir presupuestos históricos (JSON) en vectores. El módulo nuevo vive en `app/generation/rag/` y expone un único endpoint. En la Sesión 07 **no se persistía nada** — los vectores se generaban en memoria y se devolvían por HTTP. La **[Sesión 08](#sesión-8--persistencia-vectorial-y-búsqueda-semántica)** cambió eso: ahora la ingesta persiste en Postgres + pgvector y se añade un endpoint de búsqueda semántica.
 
 Piezas:
 
@@ -242,47 +242,13 @@ Piezas:
 - `embedder.py` (`OpenAIEmbedder`) — invoca `text-embedding-3-small` (1536 dims) en **batches** de 100, con reintento exponencial (1s/2s/4s) ante `RateLimitError` y logging por batch.
 - `router.py` — orquesta `chunk → embed → stats`.
 
-### Endpoint nuevo
+### Endpoint (forma de la Sesión 07, refactorizado en S08)
 
-```
-POST /embeddings/ingest
-  Input  (IngestRequest):  {"budgets": [ <Budget>, ... ]}
-  Output (IngestResponse): {"chunks": [ <EmbeddedChunk>, ... ], "stats": {...}}
-  200 OK · 422 validación Pydantic · 500 error de la API de embeddings (mensaje genérico, detalle en logs)
-```
+En la Sesión 07 `POST /embeddings/ingest` recibía `{"budgets": [<Budget>, ...]}` y **devolvía** los `chunks` embebidos + `stats` por HTTP, sin persistir (con el sample: 15 presupuestos → 52 chunks → ~4.1k tokens → ~$0.00008). La **[Sesión 08](#sesión-8--persistencia-vectorial-y-búsqueda-semántica)** cambió el contrato: ahora recibe **un** documento (`source_path` + `document_type` + `content`), lo persiste en una transacción y devuelve solo identificadores y métricas. El contrato vigente está más abajo.
 
-Aparece en Swagger (`http://localhost:8000/docs`) y se puede invocar desde ahí con el sample de datos.
+### Sanity check de embeddings
 
-Desde línea de comandos, alimentando los 15 presupuestos de ejemplo (`data/budgets_sample.json` es un array; el endpoint espera `{"budgets": [...]}`):
-
-```bash
-# httpie (envuelve el array en el campo "budgets")
-http POST :8000/embeddings/ingest budgets:=@data/budgets_sample.json
-
-# curl equivalente
-curl -s -X POST http://localhost:8000/embeddings/ingest \
-  -H 'Content-Type: application/json' \
-  -d "{\"budgets\": $(cat data/budgets_sample.json)}" | python -m json.tool | head -40
-```
-
-Con el sample: 15 presupuestos → 52 chunks → ~4.1k tokens → coste estimado ~$0.00008.
-
-### Script CLI `compare.py`
-
-Sanity check de los embeddings: embebe dos textos y devuelve su similitud coseno (calculada a mano, sin numpy). Reutiliza `OpenAIEmbedder`.
-
-```bash
-# Fuera del contenedor (desde estimator/, con el .env cargado):
-uv run python scripts/compare.py \
-  --text-a "OAuth 2.0 authentication backend for fintech" \
-  --text-b "JWT-based authorization service for banking app"
-
-# Dentro del contenedor (scripts/ está bind-montado en docker-compose.yml):
-docker compose exec estimator python scripts/compare.py \
-  --text-a "..." --text-b "..."
-```
-
-Los resultados de las tres parejas de validación del enunciado están en [`app/generation/rag/SANITY_CHECK.md`](app/generation/rag/SANITY_CHECK.md).
+El `scripts/compare.py` de la Sesión 07 (similitud coseno entre dos textos sueltos, calculada a mano) fue **reemplazado en S08** por [`scripts/query_examples.py`](#sesión-8--persistencia-vectorial-y-búsqueda-semántica), que ejercita el corpus real vía `POST /search`. Los resultados de las parejas de validación originales siguen en [`app/generation/rag/SANITY_CHECK.md`](app/generation/rag/SANITY_CHECK.md).
 
 ### Comparativa de estrategias de chunking (sesión en vivo)
 
@@ -312,15 +278,41 @@ uv run python scripts/compare_chunkers.py --strategies all --queries all \
   --show-stats --show-cost --output app/generation/rag/COMPARISON_REPORT.md
 ```
 
-Las estrategias `semantic`, `propositional` y `contextual_retrieval` llaman a APIs externas durante la ingesta (necesitan `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`) y reportan su coste en `chunking_done`. `sentence_window` usa NLTK (`punkt`/`punkt_tab`, descarga perezosa). Nada se persiste todavía — la persistencia vectorial con pgvector entra en la **Sesión 08**.
+Las estrategias `semantic`, `propositional` y `contextual_retrieval` llaman a APIs externas durante la ingesta (necesitan `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`) y reportan su coste en `chunking_done`. `sentence_window` usa NLTK (`punkt`/`punkt_tab`, descarga perezosa). El comparador **no persiste nada** (es una herramienta de análisis); la persistencia vectorial llegó en la **[Sesión 08](#sesión-8--persistencia-vectorial-y-búsqueda-semántica)** para el flujo de ingesta + búsqueda.
 
 ### Dependencias y scope
 
 - Dependencias del pre-ejercicio: `tiktoken>=0.7.0` (`openai` ya estaba desde Sesión 01).
 - Dependencias de la sesión en vivo: `langchain-text-splitters`, `langchain-experimental`, `langchain-openai`, `nltk` (`anthropic` ya estaba). No se añade numpy/scikit-learn ni `sentence-transformers`; la coseno y los percentiles son stdlib.
 - **Late chunking** se trata como concepto en el directo (no hay código ejecutable: requiere modelos con token-level embeddings que no son el del proyecto).
-- **Fuera de scope** → **Sesión 08**: persistencia vectorial (pgvector), búsqueda semántica / retrieval real y métricas formales de retrieval (recall@k, NDCG).
+- **Ya en la Sesión 08** (ver abajo): persistencia vectorial (pgvector) y búsqueda semántica real (`POST /search`). **Sigue fuera de scope**: índice ANN (HNSW) y métricas formales de retrieval (recall@k, NDCG).
 - El guion del directo está en `guides/session-7-live-guide.md` (git-ignored, material de instructor).
+
+## Sesión 8 — Persistencia vectorial y búsqueda semántica
+
+La ingesta deja de ser en memoria: los chunks embebidos se **persisten** en Postgres + pgvector y se consultan por **similitud semántica**. La migración `0002_rag_documents_chunks` activa la extensión `vector` y crea dos tablas; el código nuevo vive en `app/generation/rag/store/` (escritura) y `app/generation/rag/retriever.py` (lectura).
+
+```
+POST /embeddings/ingest   {source_path, document_type, content:<Budget>}
+  200 → {document_id, chunks_created, embedding_dimension, ingestion_time_ms}
+  409 → {detail: "Document already ingested", document_id}   # source_path repetido
+  Chunk + embed + persist ocurren en UNA transacción: si el embedder falla, no queda documento huérfano.
+
+POST /search              {query, k}
+  200 → {query, k, search_time_ms, results:[{chunk_id, document_id, chunk_type, content, distance, metadata}]}
+```
+
+`scripts/query_examples.py` (sustituye al `compare.py` de S07) lanza cinco queries representativas contra `/search` e imprime el top-k, para observar el ranking desde ángulos distintos (match directo, paráfrasis, dominio ajeno, consulta ambigua, consulta muy específica).
+
+### Decisiones de esquema (y por qué)
+
+**(a) Dos tablas (`documents` / `chunks`), no una.** Un presupuesto produce N chunks (1:N). Una sola tabla plana duplicaría los metadatos del documento (`source_path`, `document_type`, `ingested_at`) en cada fila de chunk: almacenamiento desperdiciado y anomalías de actualización. Con dos tablas y `FOREIGN KEY ... ON DELETE CASCADE`, borrar un documento elimina atómicamente sus chunks — sin chunks huérfanos ni identidad de documento repetida. La separación es también conceptual: `documents` guarda **procedencia**, `chunks` guarda **contenido + vector**.
+
+**(b) `metadata` como `JSONB`, no columnas.** Los campos estables y de forma fija van en columnas tipadas (`document_type`, `chunk_type`, `source_path`, fechas). Los campos **variables o que el chunker enriquece** (`budget_id`, `client_sector`, `main_technology`, `complexity`, y a futuro tags/scope/tecnologías) van en `JSONB`: su forma cambia según el tipo de documento y la estrategia de chunking, y el chunker puede añadir claves **sin una migración cada vez**. El índice **GIN** sobre `chunks.metadata` permite filtrar por claves arbitrarias del JSONB. El coste asumido: se pierde el chequeo de tipos a nivel de columna, aceptable porque estos campos son para filtrado flexible, no la vía de acceso principal.
+
+**(c) `cosine_distance` (`<=>`), no L2 ni inner product.** La similitud semántica de texto es **angular**: importa la dirección del vector, no su magnitud. La distancia coseno es invariante a la escala e interpretable (rango `[0, 2]`, `0` = misma dirección). El *inner product* (`<#>`) premia además la magnitud, así que solo equivale a coseno si los vectores están perfectamente normalizados — una suposición frágil (dimensiones Matryoshka recortadas, futuros modelos). L2 (`<->`) mezcla magnitud y dirección. Coseno es la convención para embeddings de texto y la opción robusta aunque un vector no venga con norma exacta 1. (Fija además la *operator class* del futuro índice: `vector_cosine_ops`.)
+
+**(d) Sin índice vectorial, a propósito.** Sin índice, Postgres hace *sequential scan* completo: vecinos **exactos**, recall 100%, cero aproximación ni knobs que tunear. Para el corpus de ejemplo (decenas de documentos, cientos de chunks) eso resuelve en pocos cientos de ms — perfectamente aceptable. Un índice ANN (HNSW/IVFFlat) cambia exactitud por velocidad: es **aproximado** (recall < 100%), exige tuning (`m`, `ef_construction`, `ef_search`…) y solo compensa a escala. Empezar sin índice permite **observar** la latencia del scan en el directo y verla desplomarse al añadir HNSW — no se aprecia el índice sin sentir antes su ausencia. El slot está reservado en el roadmap de `ARCHITECTURE.md`.
 
 ---
 

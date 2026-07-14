@@ -13,8 +13,9 @@ El estimador no es un único patrón de generación: a lo largo del máster apil
   cuando ya hay una respuesta equivalente: primero un acierto exacto (SHA-256), luego un
   acierto por similitud vectorial.
 - **RAG — Retrieval-Augmented Generation** (`app/generation/rag/`). Convierte un corpus
-  (presupuestos históricos) en chunks + embeddings y —a partir de la Sesión 8— los persiste
-  y los recupera para enriquecer el prompt con conocimiento citable.
+  (presupuestos históricos) en chunks + embeddings, los persiste en Postgres + pgvector
+  (`store/`) y los recupera por similitud semántica (`retriever.py`) para enriquecer el
+  prompt con conocimiento citable.
 - **Agéntica** (`app/generation/agentic/`). Un bucle Actor-Crítico-Boss que itera y audita la
   estimación antes de aceptarla, apoyado en la conversación multi-turno
   (`app/generation/conversation/`).
@@ -44,7 +45,7 @@ app/
 │
 ├── generation/             # las 3 arquitecturas que componen + substrato conversacional
 │   ├── cag/                #   exact.py + semantic.py
-│   ├── rag/                #   chunking/ + embedding/ + analysis/ + store/(S8) + retriever.py(S8)
+│   ├── rag/                #   chunking/ + embedding/ + analysis/ + store/ (pgvector) + retriever.py
 │   ├── agentic/            #   boss.py + critic.py
 │   └── conversation/       #   models, store, metadata_extractor, tier_resolver, compression/
 │
@@ -55,7 +56,8 @@ app/
     ├── estimations.py      #   POST /api/v1/estimate
     ├── sessions.py         #   /sessions/*
     ├── ingestion.py        #   /api/v1/ingestion/*
-    ├── embeddings.py       #   POST /embeddings/ingest
+    ├── embeddings.py       #   POST /embeddings/ingest (persistente) + /embeddings/compare
+    ├── search.py           #   POST /search (retrieval semántico por coseno)
     └── config.py           #   GET/PUT /api/v1/config/models (modelos en runtime)
 ```
 
@@ -132,7 +134,7 @@ POST /api/v1/estimate
 ## 8. Contratos públicos que NO se rompen
 
 - **Rutas HTTP**: `/api/v1/estimate`, `/sessions/*`, `/api/v1/ingestion/*`, `/embeddings/ingest`,
-  `/api/v1/config/models`.
+  `/embeddings/compare`, `/search`, `/api/v1/config/models`.
   El cliente Rails (`estimator-web`) depende de ellas y de la forma JSON de
   `EstimationResponse` / `ACBResponse`.
 - **`EstimationResult`** (`domain/schemas/estimation.py`): el orden de campos importa para
@@ -142,8 +144,10 @@ POST /api/v1/estimate
 
 ## 9. Roadmap (slots reservados)
 
-- `generation/rag/store/` — persistencia pgvector (HNSW). **Sesión 8.**
-- `generation/rag/retriever.py` — recuperación semántica con filtrado por metadatos/acceso. **Sesión 8.**
+- **Índice ANN (HNSW)** sobre `chunks.embedding` — hoy `POST /search` hace *sequential scan*
+  completo (aceptable para el corpus de ejemplo); el índice se añade en el directo. **Sesión 8.**
+- **Filtrado por metadatos / control de acceso** en `retriever.py` — hoy recupera por sola
+  similitud coseno, sin filtros sobre el JSONB ni scoping. **Sesión 8.**
 
 ## Apéndice — Mapa de migración de rutas (vieja → nueva)
 
