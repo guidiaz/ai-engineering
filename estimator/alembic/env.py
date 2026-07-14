@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from logging.config import fileConfig
 
+import pgvector.sqlalchemy
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
@@ -46,6 +47,12 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
+        # Teach the dialect's reflection about pgvector's ``vector`` column type
+        # so that autogenerate / ``alembic check`` recognise existing vector
+        # columns instead of treating them as an unknown type and emitting
+        # spurious diffs. This is the sync-template equivalent of the pgvector
+        # registration the async template does inside ``do_run_migrations``.
+        connection.dialect.ischema_names["vector"] = pgvector.sqlalchemy.Vector
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
