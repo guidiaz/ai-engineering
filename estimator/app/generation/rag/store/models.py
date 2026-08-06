@@ -79,10 +79,10 @@ class ChunkRow(Base):
     )
     # Session 10: STORED generated tsvector backing the lexical (keyword) branch
     # of hybrid search. Read-only at the ORM level — Postgres maintains it from
-    # ``content``. ``english`` config matches the corpus (see migration 0003).
+    # ``content``. ``spanish`` config matches the corpus (see migration 0004).
     content_tsv: Mapped[str | None] = mapped_column(
         TSVECTOR,
-        Computed("to_tsvector('english', content)", persisted=True),
+        Computed("to_tsvector('spanish', content)", persisted=True),
         nullable=True,
     )
     metadata_: Mapped[dict] = mapped_column(

@@ -169,8 +169,8 @@ class ChunkStore:
         The lexical branch of hybrid search: ``plainto_tsquery`` turns the query
         into a tsquery (AND of its lexemes, stop-words dropped), ``@@`` keeps only
         chunks that match, and ``ts_rank_cd`` (cover-density) ranks them — higher
-        is better, opposite to vector distance. The ``english`` config MUST match
-        the generated column's config (migration 0003) or the GIN index is bypassed
+        is better, opposite to vector distance. The ``spanish`` config MUST match
+        the generated column's config (migration 0004) or the GIN index is bypassed
         and matching silently changes. Structural filters mirror ``search_filtered``
         so the two branches see the same candidate space.
 
@@ -178,7 +178,7 @@ class ChunkStore:
         DESC (most relevant first), capped at ``top_k``. ``rank`` rides along for
         debugging; fusion only uses the ordering.
         """
-        tsquery = func.plainto_tsquery("english", query_text)
+        tsquery = func.plainto_tsquery("spanish", query_text)
         rank = func.ts_rank_cd(ChunkRow.content_tsv, tsquery)
 
         structural_filters = self._structural_filters(
