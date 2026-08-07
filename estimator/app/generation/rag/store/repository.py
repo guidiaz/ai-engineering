@@ -166,19 +166,26 @@ class ChunkStore:
     ) -> list[Row]:
         """Keyword (full-text) ranking over the ``content_tsv`` column (Session 10).
 
-        The lexical branch of hybrid search: ``plainto_tsquery`` turns the query
-        into a tsquery (AND of its lexemes, stop-words dropped), ``@@`` keeps only
-        chunks that match, and ``ts_rank_cd`` (cover-density) ranks them — higher
-        is better, opposite to vector distance. The ``spanish`` config MUST match
-        the generated column's config (migration 0004) or the GIN index is bypassed
-        and matching silently changes. Structural filters mirror ``search_filtered``
-        so the two branches see the same candidate space.
+        The lexical branch of hybrid search: the query is reduced to its lexemes
+        (same stemming/stop-word rules as the indexed column) and OR-combined into
+        a tsquery, ``@@`` keeps only chunks that match at least one lexeme, and
+        ``ts_rank_cd`` (cover-density) ranks by how many of the query's terms a
+        chunk covers — higher is better, opposite to vector distance. OR rather
+        than AND matters here: a real query is a multi-sentence project
+        description (a dozen-plus lexemes), and ``plainto_tsquery``'s implicit AND
+        would require a single short chunk to contain every one of them, which
+        essentially never happens — the lexical branch would silently return
+        nothing. The ``spanish`` config MUST match the generated column's config
+        (migration 0004) or the GIN index is bypassed and matching silently
+        changes. Structural filters mirror ``search_filtered`` so the two branches
+        see the same candidate space.
 
         Returns rows ascending-irrelevant→relevant is reversed: ordered by rank
         DESC (most relevant first), capped at ``top_k``. ``rank`` rides along for
         debugging; fusion only uses the ordering.
         """
-        tsquery = func.plainto_tsquery("spanish", query_text)
+        lexemes = func.tsvector_to_array(func.to_tsvector("spanish", query_text))
+        tsquery = func.to_tsquery("spanish", func.array_to_string(lexemes, " | "))
         rank = func.ts_rank_cd(ChunkRow.content_tsv, tsquery)
 
         structural_filters = self._structural_filters(
