@@ -89,3 +89,33 @@ La primera corrida con *reranking* descarga los pesos del cross-encoder
 (`cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`); verificar antes con
 `python -m app.generation.rag.retrieval.verify_reranker`. La tabla comparativa y el desglose por
 consulta se imprimen en español directamente desde el *script* (no se transcriben a mano).
+
+## Conclusiones
+
+**¿Por qué ampliamos el golden set a 15 muestras?** Porque con 5 consultas cada una pesa 0,20 en la
+media, así que una diferencia agregada como 0,79 (B) frente a 0,81 (A) cabe entera dentro del ruido de
+una sola consulta y no permite decidir nada. Quince reduce la varianza del estimador, cubre los cuatro
+sectores y hace aparecer los 17 presupuestos como relevantes en alguna consulta, con distractores
+cross-sector deliberados (p. ej. Q14: *sensor telemetry* industrial vs. *wearable ingestion* clínico)
+que son justo el modo de fallo que la búsqueda híbrida y el reranking dicen atacar; además reparte los
+techos entre 0,6 y 1,0 para no medirlo todo en saturación. Dicho esto, 15 sigue siendo una muestra
+pequeña: sirve para decidir con criterio, no como prueba estadística concluyente.
+
+**¿Qué configuración usaríamos?** Como *baseline* de producción, **A (vectorial pura)**: iguala en
+precisión@5 agregada a C y D (0,81) con la mínima latencia (~57 ms) y la mínima complejidad, y la
+híbrida sin rerank (B) se descarta directamente porque es *peor* en precisión y *más* lenta que A. Ahora
+bien, mantendríamos el **reranking como opción activable** (ya es un *toggle* sin tocar código) en
+lugar de eliminarlo: su valor no se aprecia con 60 chunks pero crece con el corpus. La postura contraria
+también es defendible: en el flujo real `estimate_from_transcript`, que ya espera segundos por la
+generación del LLM, los ~7 s del reranker son marginales y su reordenado por consulta (Q4 sube de 0,80 a
+1,00) reduce el riesgo de anclar la estimación en un presupuesto irrelevante; con ese criterio, dejar C
+o D activado por defecto se justifica.
+
+**¿La ganancia de relevancia del reranking justifica su latencia en este caso?** En este dataset y por
+precisión@5 agregada, **no**: 0,81 con y sin reranker, pagando ~120× de latencia (≈57 ms → ≈7047 ms)
+por cero ganancia media; el reranker solo redistribuye qué consultas ganan o pierden, no eleva el techo.
+El matiz honesto es doble: (1) un corpus de 60 chunks infravalora al reranker, cuyo beneficio aumenta
+con el tamaño del *recall* y el número de distractores densos que la etapa barata deja pasar; y (2) esos
+7 s son de un cross-encoder en CPU y su coste *relativo* se diluye dentro de un pipeline que ya invoca un
+LLM lento. Conclusión: no lo activaríamos por defecto con estos datos, pero lo dejaríamos disponible y
+volveríamos a medir en cuanto el corpus crezca.
