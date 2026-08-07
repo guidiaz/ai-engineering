@@ -1,5 +1,5 @@
 {
-  "description": "Session 10 golden set for retrieval evaluation. Five representative project descriptions to estimate, each hand-annotated with the historical budgets that are genuinely relevant. Graded over the BASE corpus (data/budgets_sample.json, chunk_type='budget_component') so the score is reproducible even if the task corpus is also ingested. A retrieved chunk counts as relevant iff its parent budget_id is in relevant_budget_ids. The distractors are deliberately cross-sector 'similar but irrelevant' budgets (e.g. e-commerce vendor payouts vs. a fintech payments gateway) — the exact failure mode this exercise attacks.",
+  "description": "Session 10 golden set for retrieval evaluation. Fifteen representative project descriptions to estimate, each hand-annotated with the historical budgets that are genuinely relevant. Graded over the BASE corpus (data/budgets_sample.json, chunk_type='budget_component') so the score is reproducible even if the task corpus is also ingested. A retrieved chunk counts as relevant iff its parent budget_id is in relevant_budget_ids; because precision@5 is chunk-level and the top-5 is never truncated, the max score of a query is min(relevant_chunks, 5)/5 (a single 3-component budget caps at 0.6, a 4-component at 0.8, two+ budgets reach 1.0). The distractors are deliberately cross-sector 'similar but irrelevant' budgets (e.g. e-commerce vendor payouts vs. a fintech payments gateway, or industrial sensor telemetry vs. wearable ingestion) — the exact failure mode this exercise attacks. Query text is English on purpose: the corpus content is English and the FTS column uses to_tsvector('spanish', content), so English queries keep the lexical branch meaningful; Spanish queries would zero it out and collapse the hybrid configs onto the vector ones.",
   "corpus": "data/budgets_sample.json",
   "chunk_types": ["budget_component"],
   "k": 5,
@@ -33,6 +33,66 @@
       "query": "Real-time payments gateway with fraud detection, transaction reconciliation and a double-entry ledger.",
       "relevant_budget_ids": ["BUD-2024-003", "BUD-2024-001"],
       "note": "Fintech payments. Trap: BUD-2024-006 (e-commerce vendor payouts) and BUD-2024-007 (grocery delivery payments) are lexically near but wrong domain."
+    },
+    {
+      "id": "Q6",
+      "query": "Consumer lending platform with automated loan origination, credit scoring from bureau data and bank statements, KYC underwriting and e-signature loan contracts.",
+      "relevant_budget_ids": ["BUD-2024-002"],
+      "note": "Consumer lending. Only BUD-2024-002 genuinely matches (loan origination + scoring); ceiling 0.8 (4 components). Trap: BUD-2024-001/003 are finance but banking/payments, not lending."
+    },
+    {
+      "id": "Q7",
+      "query": "Robo-advisor wealth management platform with automated portfolio rebalancing, mean-variance optimization and end-of-day market data ingestion.",
+      "relevant_budget_ids": ["BUD-2024-004"],
+      "note": "Wealth/robo-advisor. Only BUD-2024-004 matches; ceiling 0.6 (3 components). Trap: BUD-2024-001/003 (finance) share vocabulary but are banking/payments."
+    },
+    {
+      "id": "Q8",
+      "query": "Pharmacy management system with electronic prescription intake, drug-interaction checks, lot-and-expiry inventory and dispensing labels.",
+      "relevant_budget_ids": ["BUD-2024-011"],
+      "note": "Pharmacy operations. Only BUD-2024-011 matches; ceiling 0.6 (3 components). Trap: BUD-2024-009/012 share the healthcare sector; BUD-2024-014 shares 'inventory/reorder' vocabulary but is warehouse logistics."
+    },
+    {
+      "id": "Q9",
+      "query": "Clinical trial data platform with configurable electronic data capture forms, patient de-identification and CDISC-aligned regulatory dataset export.",
+      "relevant_budget_ids": ["BUD-2024-012"],
+      "note": "Clinical trial data capture. Only BUD-2024-012 matches; ceiling 0.6 (3 components). Trap: BUD-2024-009 (healthcare records) is close in sector; BUD-2024-002/016 share 'regulatory export' vocabulary."
+    },
+    {
+      "id": "Q10",
+      "query": "Fashion e-commerce returns and resale portal with self-service return labels, warehouse item grading and secondary-market listing sync.",
+      "relevant_budget_ids": ["BUD-2024-008"],
+      "note": "Fashion returns/resale. Only BUD-2024-008 matches; ceiling 0.6 (3 components). Trap: BUD-2024-005/006/017 are same-sector e-commerce but storefront/marketplace, not returns."
+    },
+    {
+      "id": "Q11",
+      "query": "Healthcare platform handling protected health information: clinical records with HL7/FHIR, patient consent capture, immutable access audit and data de-identification.",
+      "relevant_budget_ids": ["BUD-2024-009", "BUD-2024-012"],
+      "note": "PHI handling across records + privacy. BUD-2024-009 (FHIR records + consent/audit) and BUD-2024-012 (de-identification + data capture) both genuinely handle PHI; ceiling 1.0. Trap: BUD-2024-010/011 share the healthcare sector but cover monitoring/pharmacy."
+    },
+    {
+      "id": "Q12",
+      "query": "Logistics automation for warehouse and last-mile delivery: inventory picking, automated guided vehicle coordination and delivery route optimization.",
+      "relevant_budget_ids": ["BUD-2024-007", "BUD-2024-014"],
+      "note": "Logistics/routing across warehouse + delivery. BUD-2024-014 (WMS + AGV) and BUD-2024-007 (delivery slots + route optimization) are functionally logistics; ceiling 1.0. Trap: BUD-2024-013 is industrial IoT (telemetry/maintenance), not logistics."
+    },
+    {
+      "id": "Q13",
+      "query": "Multi-vendor marketplace with vendor onboarding and KYC, split-order fulfillment, scheduled vendor payouts and buyer-seller dispute handling.",
+      "relevant_budget_ids": ["BUD-2024-006"],
+      "note": "Marketplace operations. Only BUD-2024-006 matches; ceiling 0.8 (4 components). Trap: BUD-2024-003 shares 'payouts/reconciliation' vocabulary but is a payments gateway; BUD-2024-005/017 are e-commerce but single-vendor storefront."
+    },
+    {
+      "id": "Q14",
+      "query": "Remote patient monitoring with wearable vital-sign ingestion, threshold-based clinical alerting on abnormal trends and a care-team triage dashboard.",
+      "relevant_budget_ids": ["BUD-2024-010"],
+      "note": "Remote patient monitoring. Only BUD-2024-010 matches; ceiling 0.6 (3 components). Trap: BUD-2024-013 ('sensor telemetry ingestion') is a strong cross-sector lexical trap (industrial, not clinical); BUD-2024-009 shares the healthcare sector."
+    },
+    {
+      "id": "Q15",
+      "query": "Core banking modernization: event-sourced double-entry transaction ledger, idempotent postings, settlement reconciliation and strangler-fig migration off the legacy monolith.",
+      "relevant_budget_ids": ["BUD-2024-001", "BUD-2024-003", "BUD-2024-016"],
+      "note": "Core banking ledger/reconciliation/migration. BUD-2024-016 (monolith decomposition + event-sourced ledger), BUD-2024-001 (transaction ledger) and BUD-2024-003 (settlement reconciliation) all genuinely match; ceiling 1.0 and folds 016 into a paired query (016 alone would cap at 0.4). Trap: BUD-2024-006 shares 'reconciliation' vocabulary but is a marketplace."
     }
   ]
 }

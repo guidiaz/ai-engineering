@@ -49,12 +49,13 @@ from app.generation.rag.retrieval.pipeline import retrieve  # noqa: E402
 
 GOLDEN_PATH = ROOT / "evals" / "golden_retrieval.json"
 
-# (id, search label, rerank label, search_mode, rerank)
+# (id, search label, rerank label, search_mode, rerank). Labels are Spanish:
+# the comparative table is the exercise deliverable ("tabla comparativa, en español").
 CONFIGS = [
-    ("A", "Vector", "No", "vector", False),
-    ("B", "Hybrid", "No", "hybrid", False),
-    ("C", "Vector", "Yes", "vector", True),
-    ("D", "Hybrid", "Yes", "hybrid", True),
+    ("A", "Vectorial", "No", "vector", False),
+    ("B", "Híbrida", "No", "hybrid", False),
+    ("C", "Vectorial", "Sí", "vector", True),
+    ("D", "Híbrida", "Sí", "hybrid", True),
 ]
 
 # No effective relevance floor: we want a full top-k to grade ranking quality.
@@ -139,8 +140,8 @@ async def main() -> int:
 
 
 def _print_report(results: dict, queries: list, k: int) -> None:
-    print(f"\n## Retrieval evaluation — precision@{k} and latency\n")
-    print(f"| Config | Search | Reranking | Precision@{k} | Latency (ms) |")
+    print(f"\n## Evaluación de recuperación — precisión@{k} y latencia\n")
+    print(f"| Configuración | Búsqueda | Reranking | Precisión@{k} | Latencia (ms) |")
     print("| --- | --- | --- | --- | --- |")
     for cfg_id, search_label, rerank_label, _m, _rr in CONFIGS:
         bucket = results[cfg_id]
@@ -148,8 +149,8 @@ def _print_report(results: dict, queries: list, k: int) -> None:
         mean_l = statistics.fmean(bucket["latencies_ms"])
         print(f"| {cfg_id} | {search_label} | {rerank_label} | {mean_p:.2f} | {mean_l:.1f} |")
 
-    print(f"\n### Per-query precision@{k}\n")
-    header = "| Query | " + " | ".join(cfg[0] for cfg in CONFIGS) + " |"
+    print(f"\n### Precisión@{k} por consulta\n")
+    header = "| Consulta | " + " | ".join(cfg[0] for cfg in CONFIGS) + " |"
     print(header)
     print("| --- | " + " | ".join("---" for _ in CONFIGS) + " |")
     for q in queries:
