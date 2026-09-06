@@ -105,6 +105,36 @@ Key design points future changes should respect:
 
 - **Session 12 adds a hand-written agentic layer (manual Responses API loop).** Where the S9–S11 estimate path is a *fixed* pipeline (reformulate → retrieve → generate), the agent *decides* at each step how many budget searches to run and in what order — the right shape for a transcript that mixes several unrelated components (e.g. business backend + ERP integration + mobile app). It lives under `app/generation/agentic/` alongside the untouched S4 ACB files (`boss.py`/`critic.py`): `agent_schemas.py` (tool arg models + trace models `AgentStep`/`AgentTrace` with a `render()` for the `STEP N` console format + the LIGHT result `AgentEstimate`, deliberately distinct from the heavy RAG `Estimate`), `agent_tools.py` (three **flat** Responses tool schemas with `strict:true` — `search_budgets`, `calculate_estimate`, `validate_estimate` — plus impls and an async `dispatch_tool`), and `agent_loop.py` (`run_estimation_agent`: the manual reason→act→observe loop). **This is the one deliberate exception to the "everything goes through `LLMWrapper`" rule** — the agent drives the raw OpenAI **Responses API** (`client.responses.create`/`.parse`) by hand, because seeing the loop is the whole point of the exercise (do NOT "fix" it to use `LLMWrapper`). Loop mechanics: **stateful chaining** (`store=True` + `previous_response_id` + only the new `function_call_output` items each turn, so the server retains reasoning-item ordering — avoids the gpt-5 ordering pitfalls); `reasoning={"effort":…,"summary":"auto"}` surfaces reasoning summaries for the trace; a `max_iterations` safeguard bounds the natural stop (a turn with no `function_call`); tool errors are returned as the output string so the model self-corrects instead of crashing the loop; a terminal `responses.parse(text_format=AgentEstimate)` yields the validated result. `search_budgets` **wraps the real `retrieve()`** (budget collection, `chunk_type='historical_task'`) via an **injectable backend** — the student stub `exercises/session-12/reference_retrieval.py` swaps in for offline loop debugging. A new async client factory `dependencies.get_async_openai_client()` (mirrors `get_openai_client()`) backs the loop. There is **no HTTP endpoint or Rails UI this session** (pre-exercise scope; the live session adds those). Run via `scripts/run_agent_s12.py` (CLI flags `--model`/`--effort`/`--max-iterations`/`--stub`/`--out`). The student kit + reference-solution pointers live in `estimator/exercises/session-12/` (two transcripts, the stub, a `calculate_estimate` skeleton, README); the committed deliverable trace is `exercises/session-12/example_trace_complex.txt`. Tests are network-free (`tests/generation/agentic/`, a scripted fake `AsyncOpenAI`).
 
+- **Session 13 turns the S12 loop into an explicit LangGraph graph.** Same work, declared topology
+  instead of control flow inside a `while`: `START → extract_requirements → classify_components →
+  search_budgets → generate_estimate → validate_and_consolidate → END`, **strictly sequential for
+  now** (the baseline the next iteration parallelises). It lives in `app/generation/agentic/graph/`
+  (`schemas.py` · `state.py` · `nodes.py` · `builder.py`) alongside the untouched S12 loop and the
+  S4 ACB files. **The state is the lesson**: `EstimationGraphState` is a `TypedDict` whose channels
+  are merged per key — `budgets` and `errors` carry `Annotated[..., operator.add]` reducers, every
+  other key is last-write-wins. The plain keys are safe *only* because the edges are sequential; a
+  fan-out would need them to become accumulators too. Nodes are **pure functions returning a partial
+  update** — returning the whole state re-applies `operator.add` and silently doubles the
+  accumulators (`test_accumulator_channels_do_not_double` is what catches it). Each node **reuses
+  existing logic**, nothing is reimplemented: the two LLM nodes go through `LLMWrapper.complete_structured`
+  (`REFORMULATION_MODEL`, no new setting), `search_budgets` calls `agent_tools.default_retrieval_backend`
+  (the S9/S10 `retrieve()`, injectable so the S12 offline stub can stand in), `generate_estimate` calls
+  the deterministic `agent_tools.calculate_estimate`, and `validate_and_consolidate` calls
+  `agent_tools.validate_estimate`. Failures are **accumulated into `errors`, never raised**, so one
+  dead component only downgrades the outcome. Output is `GraphEstimate` with a new
+  **`status: ok | needs_review | insufficient_context`** decided in exactly one node — an ungrounded
+  run reports `insufficient_context` rather than a 0h total that reads as a cheap project. **No HTTP
+  endpoint and no checkpointer this session** (pre-exercise scope, mirroring S12): `compile()` takes
+  `checkpointer=`, and `langgraph-checkpoint-postgres` + the pgvector Postgres are the intended seam,
+  but wiring persistence changes the invocation contract (`thread_id`) and needs a table migration.
+  Run via `scripts/run_graph_s13.py` (`--stub` for the offline path, `--out` to write the
+  deliverable); it streams per-node state deltas via `astream(stream_mode="updates")`. The real run
+  needs the task corpus ingested (`scripts/build_task_corpus.py --ingest`) — without it
+  `search_budgets` filters on `chunk_type='historical_task'`, finds nothing, and the graph correctly
+  returns `insufficient_context`. Student kit in `estimator/exercises/session-13/` (README + the
+  committed `example_run.txt`), reusing the S12 transcripts and retrieval stub rather than duplicating
+  them. Tests: `tests/generation/agentic/test_graph.py`, network-free. **No new env vars.**
+
 ## Configuration
 
 `.env` (copied from `.env.example`) drives everything via `pydantic-settings`.

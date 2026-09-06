@@ -45,7 +45,7 @@ app/
 ├── generation/             # las 3 arquitecturas que componen + substrato conversacional
 │   ├── cag/                #   exact.py + semantic.py
 │   ├── rag/                #   chunking/ + embedding/ + analysis/ + store/ + ingest_service.py + retriever.py
-│   ├── agentic/            #   boss.py + critic.py
+│   ├── agentic/            #   boss.py + critic.py + agent_loop.py (S12) + graph/ (S13)
 │   └── conversation/       #   models, store, metadata_extractor, tier_resolver, compression/
 │
 ├── ingestion/              # pipeline batch (offline) que alimenta RAG
@@ -76,11 +76,16 @@ De más-importado a menos. Cada capa **solo** puede importar de las que tiene po
 | `dependencies.py` (COMPOSITION ROOT) | cualquier cosa | (lo importan solo `api/` y los tests) |
 | `main.py` | `api`, `config` | — |
 
-**Dos aristas especiales, explícitas:**
+**Tres aristas especiales, explícitas:**
 1. `agentic` **puede** importar `conversation` (lo agéntico se construye sobre el multi-turno).
    La inversa está **prohibida**.
-2. Los hermanos de `generation` se encuentran **solo** en el conductor. Si dos capas necesitan
-   colaborar, el método que las une va en `EstimationService`, nunca un import cruzado.
+2. `agentic` **puede** importar `rag/retrieval` (desde la Sesión 12). Una tool de agente y un nodo
+   de grafo cuyo trabajo es *buscar* tienen que apoyarse en el retrieval real: reimplementarlo
+   sería peor que la excepción. La arista es **unidireccional** —`rag` no importa `agentic`— y se
+   limita a `retrieval/`, no a todo `rag`. `agent_tools.default_retrieval_backend` es el único
+   punto por el que pasa, y es inyectable, así que los tests y el stub offline no la atraviesan.
+3. Los hermanos de `generation` se encuentran **por lo demás solo** en el conductor. Si dos capas
+   necesitan colaborar, el método que las une va en `EstimationService`, nunca un import cruzado.
 
 ## 4. El conductor
 
