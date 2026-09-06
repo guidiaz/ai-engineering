@@ -33,6 +33,9 @@ services:
       - ./tests:/app/tests
       - ./data:/app/data
       - ./scripts:/app/scripts
+      # The exercise kits (transcripts, student stubs) are read by the S12/S13
+      # demo scripts, which the READMEs document running inside this container.
+      - ./exercises:/app/exercises
       - ./alembic:/app/alembic
       - ./alembic.ini:/app/alembic.ini
 
