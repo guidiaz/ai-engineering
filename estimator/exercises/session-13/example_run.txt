@@ -1,0 +1,37 @@
+transcript : exercises/session-12/sample_transcript_complex.txt
+retrieval  : retrieve() pipeline
+
+==============================================================================
+GRAPH TOPOLOGY
+==============================================================================
+  __start__  ->  extract_requirements
+  extract_requirements  ->  classify_components
+  classify_components  ->  search_budgets
+  search_budgets  ->  generate_estimate
+  generate_estimate  ->  validate_and_consolidate
+  validate_and_consolidate  ->  __end__
+
+==============================================================================
+NODE UPDATES
+==============================================================================
+  extract_requirements       requirements+=7
+  classify_components        components+=5
+  search_budgets             budgets+=22
+  generate_estimate          estimate(status=ok, total=194.2h)
+  validate_and_consolidate   estimate(status=ok, total=194.2h)
+
+==============================================================================
+FINAL ESTIMATE   status=ok
+==============================================================================
+  - Backend business core (Order Management API) (backend): 39.1h
+      refs: 5   sources: 1197, 1239, 356, 465, 494
+  - SAP ERP integration (IDoc middleware) (integration): 24.1h
+      refs: 2   sources: 1530, 518
+  - Mobile driver app (iOS & Android) (mobile): 33.3h
+      refs: 5   sources: 490, 1347, 1236, 1498, 513
+  - Management analytics dashboard (React) (frontend): 41.4h
+      refs: 5   sources: 1250, 1523, 1248, 1522, 1516
+  - Project delivery plan & architecture (tech selection) (other): 56.3h
+      refs: 5   sources: 1201, 1198, 1591, 478, 282
+
+  TOTAL: 194.2h
