@@ -15,10 +15,18 @@ WORKDIR /app
 # are only reinstalled when pyproject.toml or uv.lock actually change.
 COPY pyproject.toml uv.lock* ./
 
+# sentence-transformers pulls torch, which drags in the CUDA wheels — one of
+# them (nvidia-cublas-cu12) is 566MB. uv's default 30s per-request HTTP timeout
+# is not enough on a slow link, and the download restarts from zero on retry.
+ENV UV_HTTP_TIMEOUT=600
+
 # Install production dependencies only (no dev tools like pytest/ruff).
 # --no-install-project skips installing our own package (we just need deps).
 # uv will generate the lockfile if it doesn't exist yet.
-RUN uv sync --no-install-project --no-dev
+# The cache mount persists partial downloads between build attempts, so a
+# failed multi-GB sync resumes instead of starting over.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --no-install-project --no-dev
 
 
 # =============================================================================

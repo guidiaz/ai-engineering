@@ -41,6 +41,16 @@ dependencies = [
     "slowapi>=0.1.9",
     # Session 10 — cross-encoder reranking (recall-then-rerank). Pulls torch.
     "sentence-transformers>=3.0",
+    # torch/torchvision are transitive (sentence-transformers and timm), but
+    # [tool.uv.sources] only applies to DIRECT dependencies — so they are
+    # declared here to route them to the CPU-only index defined at the bottom
+    # of this file. Without this they resolve to the CUDA build (~2.5GB of
+    # unused NVIDIA wheels).
+    # Pinned to a single minor so `uv lock` stays reproducible for students
+    # instead of floating to the newest torch. torchvision 0.25 is the release
+    # that pairs with torch 2.10 — bump both together or resolution fails.
+    "torch>=2.10,<2.11",
+    "torchvision>=0.25,<0.26",
     # Session 6 — data-driven AI
     "pandas>=2.2",
     "pandera>=0.20",
@@ -54,6 +64,9 @@ dependencies = [
     "spacy>=3.7",
     "faker>=24.0",
     "unstructured[all-docs]>=0.14",
+    "langgraph>=1.2.2",
+    "langgraph-checkpoint-postgres>=3.1.2",
+    "logfire>=5.0.0",
 ]
 
 [dependency-groups]
@@ -68,6 +81,21 @@ dev = [
     "ragas>=0.2",
     "datasets>=2.19",
 ]
+
+# sentence-transformers (Session 10 reranking) depends on torch, which by
+# default resolves to the CUDA build on Linux and drags in ~2.5GB of NVIDIA
+# wheels (cudnn, nccl, cublas, cusparselt...). The container has no GPU and the
+# cross-encoder reranker runs on CPU, so pin torch to PyTorch's CPU-only index.
+# `explicit = true` means this index is used ONLY for the packages mapped to it
+# below; everything else keeps resolving from PyPI.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
 
 [tool.ruff]
 line-length = 100
