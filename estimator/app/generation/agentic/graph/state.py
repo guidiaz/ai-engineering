@@ -53,6 +53,10 @@ class EstimationGraphState(TypedDict, total=False):
 
     # --- input ------------------------------------------------------------- #
     transcript: str
+    # Identifier of this estimation. Doubles as the checkpointer's ``thread_id``
+    # and as the correlation key stamped on every node span, so a Logfire trace
+    # and the checkpoint rows for the same run join on it.
+    estimation_id: str
 
     # --- accumulators (explicit reducers) ---------------------------------- #
     budgets: Annotated[list[BudgetHit], operator.add]

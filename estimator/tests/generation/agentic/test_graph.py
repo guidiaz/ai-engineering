@@ -17,8 +17,12 @@ from typing import Any
 import pytest
 
 from app.generation.agentic.agent_schemas import SearchBudgetsArgs
+from langgraph.checkpoint.memory import InMemorySaver
+from logfire.testing import capfire  # noqa: F401 - pytest fixture
+
 from app.generation.agentic.graph import compile_estimation_graph, run_estimation_graph
-from app.generation.agentic.graph.builder import NODE_SEQUENCE
+from app.generation.agentic.graph.builder import NODE_SEQUENCE, build_estimation_graph
+from app.generation.agentic.graph.checkpointing import psycopg_conn_string
 from app.generation.agentic.graph.nodes import (
     generate_estimate,
     search_budgets,
@@ -270,3 +274,94 @@ async def test_every_retrieved_budget_is_joined_back_to_its_component(fake_llm):
     assert sum(c.reference_count for c in estimate.components) == len(final["budgets"])
     assert sum(len(c.cited_chunk_ids) for c in estimate.components) == len(final["budgets"])
     assert not any(c.unbudgeted for c in estimate.components)
+
+
+# --------------------------------------------------------------------------- #
+# Step 2 - persistence                                                         #
+# --------------------------------------------------------------------------- #
+def test_psycopg_conn_string_strips_the_sqlalchemy_dialect():
+    assert (
+        psycopg_conn_string("postgresql+psycopg://u:p@host:5432/db")
+        == "postgresql://u:p@host:5432/db"
+    )
+    # Already-psycopg URLs pass through untouched.
+    assert psycopg_conn_string("postgresql://u:p@host/db") == "postgresql://u:p@host/db"
+
+
+async def test_estimation_id_is_threaded_through_the_state(fake_llm):
+    compiled = compile_estimation_graph(backend=_backend_with({}))
+    final = await compiled.ainvoke(
+        {"transcript": TRANSCRIPT, "estimation_id": "est-42"},
+        config={"configurable": {"thread_id": "est-42"}},
+    )
+    assert final["estimation_id"] == "est-42"
+
+
+async def test_resume_replays_instead_of_rerunning_completed_nodes(fake_llm):
+    """The point of the checkpointer: an interrupted run continues where it stopped.
+
+    Uses InMemorySaver so the test stays network-free; the Postgres saver differs
+    only in where the rows land.
+    """
+    saver = InMemorySaver()
+    backend = _backend_with(
+        {"payments": [_hit(1, 100.0), _hit(2, 140.0)], "courier": [_hit(3, 200.0)]}
+    )
+    config = {"configurable": {"thread_id": "resume-1"}}
+
+    # Pass 1 stops before generate_estimate, as a crash or approval gate would.
+    interrupted = build_estimation_graph(backend=backend).compile(
+        checkpointer=saver, interrupt_before=["generate_estimate"]
+    )
+    first: list[str] = []
+    async for chunk in interrupted.astream(
+        {"transcript": TRANSCRIPT, "estimation_id": "resume-1"},
+        config=config,
+        stream_mode="updates",
+    ):
+        first.extend(chunk)
+    llm_calls_after_first = len(fake_llm.calls)
+
+    # Pass 2: input=None means "continue from the checkpoint", not "start over".
+    resumed = compile_estimation_graph(backend=backend, checkpointer=saver)
+    second: list[str] = []
+    async for chunk in resumed.astream(None, config=config, stream_mode="updates"):
+        second.extend(chunk)
+
+    assert "extract_requirements" in first and "search_budgets" in first
+    assert set(second) == {"generate_estimate", "validate_and_consolidate"}
+    # Nothing from pass 1 was executed again...
+    assert not (set(second) & {"extract_requirements", "classify_components", "search_budgets"})
+    # ...and crucially no further LLM call was made: the state was replayed.
+    assert len(fake_llm.calls) == llm_calls_after_first == 2
+
+    state = await resumed.aget_state(config)
+    assert len(state.values["budgets"]) == 3
+    assert state.values["estimate"].status == "ok"
+
+
+# --------------------------------------------------------------------------- #
+# Step 2 - observability                                                       #
+# --------------------------------------------------------------------------- #
+async def test_every_node_opens_exactly_one_span(fake_llm, capfire):  # noqa: F811 - capfire is the imported pytest fixture
+    await run_estimation_graph(TRANSCRIPT, backend=_backend_with({}), estimation_id="span-run")
+    spans = capfire.exporter.exported_spans_as_dict()
+    # The span name is the message TEMPLATE ("node.{node}"); the node it ran for
+    # is the `node` attribute, which is what distinguishes the five.
+    node_names = [s["attributes"].get("node") for s in spans if "node" in s["attributes"]]
+
+    # One root span for the run plus one per node.
+    assert any(s["name"] == "estimation_graph" for s in spans)
+    for node in NODE_SEQUENCE:
+        assert node_names.count(node) == 1, f"{node} did not open exactly one span"
+
+
+async def test_spans_carry_the_estimation_id(fake_llm, capfire):  # noqa: F811 - capfire is the imported pytest fixture
+    await run_estimation_graph(TRANSCRIPT, backend=_backend_with({}), estimation_id="span-run-2")
+    spans = capfire.exporter.exported_spans_as_dict()
+    node_spans = [s for s in spans if "node" in s["attributes"]]
+
+    assert node_spans, "no node spans were exported"
+    # The trace and the checkpoint rows must join on the same key.
+    for span in node_spans:
+        assert span["attributes"]["estimation_id"] == "span-run-2"

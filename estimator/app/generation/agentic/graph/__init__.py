@@ -8,6 +8,10 @@ Nothing changes outside the service: the graph consumes a transcript and returns
 a ``GraphEstimate`` with a ``status``.
 """
 
+from app.generation.agentic.graph.checkpointing import (
+    postgres_checkpointer,
+    psycopg_conn_string,
+)
 from app.generation.agentic.graph.builder import (
     build_estimation_graph,
     compile_estimation_graph,
@@ -32,6 +36,8 @@ __all__ = [
     "GraphEstimate",
     "Requirement",
     "build_estimation_graph",
+    "postgres_checkpointer",
+    "psycopg_conn_string",
     "compile_estimation_graph",
     "run_estimation_graph",
 ]

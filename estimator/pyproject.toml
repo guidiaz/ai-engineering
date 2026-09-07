@@ -97,6 +97,13 @@ explicit = true
 torch = [{ index = "pytorch-cpu" }]
 torchvision = [{ index = "pytorch-cpu" }]
 
+# Logfire is OPTIONAL here: the graph opens spans unconditionally, and without
+# `logfire.configure()` they are silent no-ops. Suppress the "not configured"
+# warning so running the app or the tests without a LOGFIRE_TOKEN is quiet —
+# `scripts/run_graph_s13.py` is what actually configures it.
+[tool.logfire]
+ignore_no_config = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
