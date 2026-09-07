@@ -1,5 +1,7 @@
-transcript : exercises/session-12/sample_transcript_complex.txt
-retrieval  : retrieve() pipeline
+transcript    : exercises/session-12/sample_transcript_complex.txt
+retrieval     : retrieve() pipeline
+estimation_id : est-s13-trace
+checkpointer  : postgres
 
 ==============================================================================
 GRAPH TOPOLOGY
@@ -14,24 +16,26 @@ GRAPH TOPOLOGY
 ==============================================================================
 NODE UPDATES
 ==============================================================================
-  extract_requirements       requirements+=7
+  extract_requirements       requirements+=12
   classify_components        components+=5
-  search_budgets             budgets+=22
-  generate_estimate          estimate(status=ok, total=194.2h)
-  validate_and_consolidate   estimate(status=ok, total=194.2h)
+  search_budgets             budgets+=23
+  generate_estimate          estimate(status=ok, total=185.1h)
+  validate_and_consolidate   estimate(status=ok, total=185.1h)
+
+checkpoints written for thread est-s13-trace: 7
 
 ==============================================================================
 FINAL ESTIMATE   status=ok
 ==============================================================================
-  - Backend business core (Order Management API) (backend): 39.1h
-      refs: 5   sources: 1197, 1239, 356, 465, 494
-  - SAP ERP integration (IDoc middleware) (integration): 24.1h
-      refs: 2   sources: 1530, 518
-  - Mobile driver app (iOS & Android) (mobile): 33.3h
-      refs: 5   sources: 490, 1347, 1236, 1498, 513
-  - Management analytics dashboard (React) (frontend): 41.4h
-      refs: 5   sources: 1250, 1523, 1248, 1522, 1516
-  - Project delivery plan & architecture (tech selection) (other): 56.3h
-      refs: 5   sources: 1201, 1198, 1591, 478, 282
+  - Logistics backend business core (backend): 27.6h
+      refs: 5   sources: 501, 518, 1239, 1197, 494
+  - SAP / ERP integration and interfacing (integration): 33.3h
+      refs: 3   sources: 680, 286, 477
+  - Driver mobile application (Android & iOS) (mobile): 32.2h
+      refs: 5   sources: 490, 1347, 1236, 1498, 1252
+  - Analytics and KPI dashboard (frontend): 41.4h
+      refs: 5   sources: 1250, 1523, 1522, 1248, 487
+  - Estimates, technology recommendation, and phased delivery plan (other): 50.6h
+      refs: 5   sources: 452, 84, 810, 1152, 1251
 
-  TOTAL: 194.2h
+  TOTAL: 185.1h

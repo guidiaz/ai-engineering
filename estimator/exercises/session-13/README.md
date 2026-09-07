@@ -146,13 +146,100 @@ grafo devuelve —correctamente— `status=insufficient_context` con todo a cero
 > (`ok`). `example_run.txt` es una ejecución concreta, no un resultado que debas reproducir clavado:
 > si tu recuento no coincide, no has roto nada.
 
-## Lo que queda fuera de este primer paso
+---
 
-Está instalado y decidido, pero **no cableado todavía**, a propósito:
+# Paso 2 — Persistencia y observabilidad
 
-- **Checkpointing** (`langgraph-checkpoint-postgres` sobre el Postgres de pgvector del proyecto).
-  Persistir cambia el contrato de invocación —toda llamada pasa a necesitar un `thread_id`— y añade
-  una migración de tablas. La costura está lista: `compile()` acepta `checkpointer=`.
+## 4. Checkpointing sobre el Postgres del proyecto
+
+Un checkpointer convierte el grafo de una llamada de usar y tirar en una **reanudable**: LangGraph
+escribe el estado después de cada nodo, indexado por el `thread_id` que pasas en la invocación.
+
+```python
+async with postgres_checkpointer() as saver:            # checkpointing.py
+    compiled = compile_estimation_graph(checkpointer=saver)
+    await compiled.ainvoke(payload, config={"configurable": {"thread_id": estimation_id}})
+```
+
+**El `thread_id` es el identificador de la estimación.** El mismo valor va como `thread_id`, como
+canal `estimation_id` del estado y como atributo de todos los spans, así que la traza de Logfire y
+las filas de checkpoint de una misma ejecución se unen por la misma clave. Se acuña uno si no lo
+pasas, igual que hace `rag.estimator._current_request_id`.
+
+Reutiliza el Postgres de pgvector que ya tienes: no hay servicio nuevo. Dos cosas que conviene
+saber antes de tocarlo:
+
+- **La URL hay que convertirla.** `settings.DATABASE_URL` viene en forma de dialecto SQLAlchemy
+  (`postgresql+psycopg://`) y psycopg la rechaza. De eso se encarga `psycopg_conn_string`.
+- **Las cuatro tablas de checkpoint NO las gestiona alembic.** `saver.setup()` crea y versiona
+  `checkpoints`, `checkpoint_writes`, `checkpoint_blobs` y `checkpoint_migrations` por su cuenta
+  (con su propia tabla `checkpoint_migrations`). Están en la misma base de datos que las tablas de
+  alembic pero **deliberadamente fuera** de su historial: no las metas en una migración, y no
+  ejecutes `alembic revision --autogenerate` sin excluirlas o generará una migración que las borra.
+
+También se declara un allowlist de serialización (`allowed_msgpack_modules`) con los modelos que
+viajan en el estado. Sin él, LangGraph avisa —«Deserializing unregistered type … will be blocked in
+a future version»— y en una versión futura el resume dejaría de funcionar.
+
+### Reanudar de verdad
+
+Ojo con una trampa: **re-invocar un hilo que ya llegó a `END` no reanuda, re-ejecuta**. Reanudar va
+de continuar una ejecución *inacabada*. Por eso la demo interrumpe a propósito:
+
+```bash
+docker compose exec estimator python scripts/run_graph_s13.py     exercises/session-12/sample_transcript_complex.txt --demo-resume
+```
+
+Pase 1 se compila con `interrupt_before=["generate_estimate"]` y se para ahí — como haría una caída
+o una puerta de aprobación humana. Pase 2 invoca el **mismo** `thread_id` con `input=None`, que
+significa "continúa desde el checkpoint", no "empieza de nuevo":
+
+```
+  pass 1 executed nodes     : extract_requirements, classify_components, search_budgets, __interrupt__
+  pass 2 executed nodes     : generate_estimate, validate_and_consolidate
+  checkpoints after pass 1  : 5
+  checkpoints after pass 2  : 7
+  components  before/after  : 5 / 5
+  budgets     before/after  : 23 / 23
+```
+
+Que los recuentos coincidan es la prueba: `extract_requirements` es una llamada a LLM, así que
+obtener el mismo número tras reiniciar sólo es posible si el estado se **replicó**, no se re-infirió.
+
+## 5. Observabilidad con Logfire
+
+Un span por nodo, todos anidados bajo un span raíz de la ejecución:
+
+```
+19:02:30.299 estimation_graph
+19:02:30.320   node.extract_requirements
+19:02:47.099   node.classify_components
+19:02:59.745   node.search_budgets
+19:03:03.033   node.generate_estimate
+19:03:03.035   node.validate_and_consolidate
+```
+
+La traza completa está en **`example_trace.txt`**, con la demo de resume al final.
+
+**La instrumentación vive en `builder.py`, no en los nodos.** Un único `_instrumented(name, fn)`
+envuelve los cinco al añadirlos, así que los nodos siguen siendo funciones puras que no saben nada
+de trazas, y `NODE_SEQUENCE` sigue siendo la única fuente de nombres. Cada span lleva el
+`estimation_id` y un **resumen** de lo que devolvió el nodo (listas → contadores), nunca el payload:
+un span con transcripciones enteras y todos los chunks es ilegible y filtra contenido al backend de
+trazas.
+
+No hace falta cuenta de Logfire: `send_to_logfire="if-token-present"` imprime los spans por consola
+y, sólo si defines `LOGFIRE_TOKEN`, los manda además a la UI. Sin `logfire.configure()` los spans
+son *no-ops* silenciosos, y `[tool.logfire] ignore_no_config = true` en `pyproject.toml` evita el
+aviso al ejecutar la app o los tests sin token.
+
+> `logfire.instrument_litellm()` **no** se usa: se probó y no genera ningún span, porque los nodos
+> llegan a LiteLLM a través de Instructor (`LLMWrapper.complete_structured`), que esa
+> instrumentación no engancha. Los eventos structlog `llm_structured_call_*` ya dan modelo y
+> latencia, y salen dentro del span del nodo al que pertenecen.
+
+## Lo que sigue quedando fuera
+
 - **Paralelismo.** `search_budgets` recorre los componentes uno tras otro. El estado ya está
   preparado para el fan-out; falta cambiar las aristas.
 - **Endpoint HTTP.** Igual que en S12, el previo se queda en grafo + script.

@@ -1,0 +1,141 @@
+transcript    : exercises/session-12/sample_transcript_complex.txt
+retrieval     : retrieve() pipeline
+estimation_id : est-s13-trace
+checkpointer  : postgres
+
+2026-09-06 19:02:30 [info     ] graph_checkpointer_ready       tables=4
+==============================================================================
+GRAPH TOPOLOGY
+==============================================================================
+  __start__  ->  extract_requirements
+  extract_requirements  ->  classify_components
+  classify_components  ->  search_budgets
+  search_budgets  ->  generate_estimate
+  generate_estimate  ->  validate_and_consolidate
+  validate_and_consolidate  ->  __end__
+
+==============================================================================
+NODE UPDATES
+==============================================================================
+19:02:30.299 estimation_graph
+19:02:30.320   node.extract_requirements
+2026-09-06 19:02:30 [info     ] llm_structured_call_started    model=gpt-5-mini response_model=RequirementList
+2026-09-06 19:02:47 [info     ] llm_structured_call_completed  latency_ms=16698 model=gpt-5-mini provider=openai
+2026-09-06 19:02:47 [info     ] graph_extract_requirements     count=12
+  extract_requirements       requirements+=12
+19:02:47.099   node.classify_components
+2026-09-06 19:02:47 [info     ] llm_structured_call_started    model=gpt-5-mini response_model=ComponentList
+2026-09-06 19:02:59 [info     ] llm_structured_call_completed  latency_ms=12641 model=gpt-5-mini provider=openai
+2026-09-06 19:02:59 [info     ] graph_classify_components      count=5
+  classify_components        components+=5
+19:02:59.745   node.search_budgets
+2026-09-06 19:03:01 [info     ] rag_retrieve_done              candidates_evaluated=1543 collection=budget lexical_hits=0 rerank=False results=5 search_mode=vector search_time_ms=92 vector_hits=5
+2026-09-06 19:03:01 [info     ] rag_retrieve_done              candidates_evaluated=1543 collection=budget lexical_hits=0 rerank=False results=3 search_mode=vector search_time_ms=19 vector_hits=3
+2026-09-06 19:03:02 [info     ] rag_retrieve_done              candidates_evaluated=1543 collection=budget lexical_hits=0 rerank=False results=5 search_mode=vector search_time_ms=25 vector_hits=5
+2026-09-06 19:03:02 [info     ] rag_retrieve_done              candidates_evaluated=1543 collection=budget lexical_hits=0 rerank=False results=5 search_mode=vector search_time_ms=22 vector_hits=5
+2026-09-06 19:03:03 [info     ] rag_retrieve_done              candidates_evaluated=1543 collection=budget lexical_hits=0 rerank=False results=5 search_mode=vector search_time_ms=26 vector_hits=5
+2026-09-06 19:03:03 [info     ] graph_search_budgets           components=5 hits=23
+  search_budgets             budgets+=23
+19:03:03.033   node.generate_estimate
+2026-09-06 19:03:03 [info     ] agent_tool_calculate_estimate  components=5 total_hours=185.1
+2026-09-06 19:03:03 [info     ] graph_generate_estimate        components=5 total_hours=185.1
+  generate_estimate          estimate(status=ok, total=185.1h)
+19:03:03.035   node.validate_and_consolidate
+2026-09-06 19:03:03 [info     ] agent_tool_validate_estimate   issues=0 ok=True
+2026-09-06 19:03:03 [info     ] graph_validate_and_consolidate errors=0 issues=0 status=ok
+  validate_and_consolidate   estimate(status=ok, total=185.1h)
+
+checkpoints written for thread est-s13-trace: 7
+
+==============================================================================
+FINAL ESTIMATE   status=ok
+==============================================================================
+  - Logistics backend business core (backend): 27.6h
+      refs: 5   sources: 501, 518, 1239, 1197, 494
+  - SAP / ERP integration and interfacing (integration): 33.3h
+      refs: 3   sources: 680, 286, 477
+  - Driver mobile application (Android & iOS) (mobile): 32.2h
+      refs: 5   sources: 490, 1347, 1236, 1498, 1252
+  - Analytics and KPI dashboard (frontend): 41.4h
+      refs: 5   sources: 1250, 1523, 1522, 1248, 487
+  - Estimates, technology recommendation, and phased delivery plan (other): 50.6h
+      refs: 5   sources: 452, 84, 810, 1152, 1251
+
+  TOTAL: 185.1h
+
+(run written to exercises/session-13/example_run.txt)
+
+
+##############################################################################
+# RESUME DEMO  (--demo-resume): interrupt mid-graph, then continue the thread
+##############################################################################
+
+2026-09-06 19:03:53 [info     ] graph_checkpointer_ready       tables=4
+==============================================================================
+PASS 1 - runs until it is interrupted before 'generate_estimate'
+==============================================================================
+19:03:53.077 estimation_graph.pass1
+19:03:53.098   node.extract_requirements
+2026-09-06 19:03:53 [info     ] llm_structured_call_started    model=gpt-5-mini response_model=RequirementList
+2026-09-06 19:04:13 [info     ] llm_structured_call_completed  latency_ms=20583 model=gpt-5-mini provider=openai
+2026-09-06 19:04:13 [info     ] graph_extract_requirements     count=7
+  extract_requirements       requirements+=7
+19:04:13.739   node.classify_components
+2026-09-06 19:04:13 [info     ] llm_structured_call_started    model=gpt-5-mini response_model=ComponentList
+2026-09-06 19:04:25 [info     ] llm_structured_call_completed  latency_ms=12059 model=gpt-5-mini provider=openai
+2026-09-06 19:04:25 [info     ] graph_classify_components      count=5
+  classify_components        components+=5
+19:04:25.803   node.search_budgets
+2026-09-06 19:04:27 [info     ] rag_retrieve_done              candidates_evaluated=1543 collection=budget lexical_hits=0 rerank=False results=5 search_mode=vector search_time_ms=110 vector_hits=5
+2026-09-06 19:04:27 [info     ] rag_retrieve_done              candidates_evaluated=1543 collection=budget lexical_hits=0 rerank=False results=3 search_mode=vector search_time_ms=22 vector_hits=3
+2026-09-06 19:04:28 [info     ] rag_retrieve_done              candidates_evaluated=1543 collection=budget lexical_hits=0 rerank=False results=5 search_mode=vector search_time_ms=25 vector_hits=5
+2026-09-06 19:04:28 [info     ] rag_retrieve_done              candidates_evaluated=1543 collection=budget lexical_hits=0 rerank=False results=5 search_mode=vector search_time_ms=26 vector_hits=5
+2026-09-06 19:04:29 [info     ] rag_retrieve_done              candidates_evaluated=1543 collection=budget lexical_hits=0 rerank=False results=5 search_mode=vector search_time_ms=44 vector_hits=5
+2026-09-06 19:04:29 [info     ] graph_search_budgets           components=5 hits=23
+  search_budgets             budgets+=23
+  __interrupt__              (no update)
+
+==============================================================================
+PASS 2 - resumes the same thread_id, input=None
+==============================================================================
+19:04:29.196 estimation_graph.resume
+19:04:29.203   node.generate_estimate
+2026-09-06 19:04:29 [info     ] agent_tool_calculate_estimate  components=5 total_hours=162.0
+2026-09-06 19:04:29 [info     ] graph_generate_estimate        components=5 total_hours=162.0
+  generate_estimate          estimate(status=ok, total=162.0h)
+19:04:29.206   node.validate_and_consolidate
+2026-09-06 19:04:29 [info     ] agent_tool_validate_estimate   issues=0 ok=True
+2026-09-06 19:04:29 [info     ] graph_validate_and_consolidate errors=0 issues=0 status=ok
+  validate_and_consolidate   estimate(status=ok, total=162.0h)
+
+==============================================================================
+RESUME EVIDENCE
+==============================================================================
+  thread_id (estimation_id) : est-s13-resume
+  pass 1 executed nodes     : extract_requirements, classify_components, search_budgets, __interrupt__
+  pass 2 executed nodes     : generate_estimate, validate_and_consolidate
+  checkpoints after pass 1  : 5
+  checkpoints after pass 2  : 7
+  components  before/after  : 5 / 5
+  budgets     before/after  : 23 / 23
+
+  pass 2 re-ran none of pass 1's nodes : True
+  state carried across the two passes  : True
+  -> extract_requirements is an LLM call, so identical counts after a restart
+     are only possible because the state was replayed, not re-inferred.
+
+==============================================================================
+FINAL ESTIMATE   status=ok
+==============================================================================
+  - Logistics backend (order management & routing) (backend): 27.6h
+      refs: 5   sources: 518, 501, 1530, 1239, 1517
+  - SAP IDoc integration middleware (integration): 31.0h
+      refs: 3   sources: 253, 876, 1064
+  - Driver mobile app (cross-platform, offline) (mobile): 33.3h
+      refs: 5   sources: 490, 1347, 1236, 1498, 513
+  - Management analytics & dashboard (frontend): 36.8h
+      refs: 5   sources: 454, 1190, 155, 1250, 605
+  - Architecture & technology decisions (other): 33.3h
+      refs: 5   sources: 1251, 518, 1516, 1506, 490
+
+  TOTAL: 162.0h

@@ -135,6 +135,38 @@ Key design points future changes should respect:
   committed `example_run.txt`), reusing the S12 transcripts and retrieval stub rather than duplicating
   them. Tests: `tests/generation/agentic/test_graph.py`, network-free. **No new env vars.**
 
+- **Session 13 step 2 adds checkpointing + Logfire tracing to the graph.** *Persistence*:
+  `app/generation/agentic/graph/checkpointing.py` opens an `AsyncPostgresSaver` over the project's
+  **existing pgvector Postgres** (no new service) as an async context manager — the saver owns a
+  pool, so it is opened once per process, never per invocation and never as an import-time
+  singleton (there is no FastAPI lifespan to close it, because there is still no endpoint).
+  `psycopg_conn_string()` strips the `+psycopg` SQLAlchemy dialect prefix that psycopg rejects.
+  **The four checkpoint tables (`checkpoints`, `checkpoint_writes`, `checkpoint_blobs`,
+  `checkpoint_migrations`) are created by `saver.setup()` and are deliberately NOT in alembic** —
+  langgraph versions them itself via its own `checkpoint_migrations`; never add them to a migration
+  and never run `alembic revision --autogenerate` without excluding them or it emits a migration
+  that drops all four. A narrow `allowed_msgpack_modules` allowlist registers the state's Pydantic
+  models, without which langgraph warns "Deserializing unregistered type … will be blocked in a
+  future version" and resume would break on a future upgrade. *thread_id*: the **estimation id** is
+  the single key — passed as the checkpointer `thread_id`, carried as the `estimation_id` state
+  channel, and stamped on every span, so the trace and the checkpoint rows join on it; minted when
+  absent, mirroring `rag.estimator._current_request_id`. **Re-invoking a thread that already
+  reached END re-runs it, it does not resume** — resume continues an *unfinished* run, so
+  `scripts/run_graph_s13.py --demo-resume` compiles pass 1 with
+  `interrupt_before=["generate_estimate"]`, then invokes the same thread with `input=None`;
+  identical component/budget counts across the restart prove replay, since `extract_requirements`
+  is an LLM call. *Observability*: `logfire` spans, one per node plus a root run span, wired by a
+  single `_instrumented(name, fn)` in `builder.py` — **instrumentation lives in the builder, not in
+  the nodes**, which stay pure. Spans carry the `estimation_id` and a *summary* of the node's
+  update (lists → counts), never the payload. `send_to_logfire="if-token-present"` means console
+  spans always and the cloud UI only with a `LOGFIRE_TOKEN`; unconfigured spans are silent no-ops
+  and `[tool.logfire] ignore_no_config = true` in `pyproject.toml` keeps app/test runs quiet.
+  **`logfire.instrument_litellm()` is deliberately not used** — tried and produced zero spans,
+  because the nodes reach LiteLLM through Instructor, which it does not hook. New CLI flags:
+  `--checkpoint`, `--estimation-id`, `--demo-resume`. Committed deliverable:
+  `exercises/session-13/example_trace.txt` (full trace + resume evidence). Still **no new env
+  vars**, no endpoint, and `search_budgets` still sequential.
+
 ## Configuration
 
 `.env` (copied from `.env.example`) drives everything via `pydantic-settings`.
